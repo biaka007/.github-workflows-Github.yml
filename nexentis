@@ -1,0 +1,64 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - release
+  workflow_dispatch: # Permet le déclenchement manuel du workflow
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14' # Spécifie la version de Node.js
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Create GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+
+      - name: Authenticate as GitHub App User
+        id: app-user
+        uses: vidavidorra/github-action-app-user@v1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          slug: ${{ steps.app-token.outputs.app-slug }}
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GIT_AUTHOR_NAME: ${{ steps.app-user.outputs.username }}
+          GIT_AUTHOR_EMAIL: ${{ steps.app-user.outputs.email }}
+          GIT_COMMITTER_NAME: ${{ steps.app-user.outputs.username }}
+          GIT_COMMITTER_EMAIL: ${{ steps.app-user.outputs.email }}
+        run: |
+          npx --no-install semantic-release || { echo 'Semantic Release failed'; exit 1; }
+
+      - name: Notify Slack
+        if: success() # Envoie une notification seulement si le workflow réussit
+        uses: slackapi/slack-github-action@v1.0.0
+        with:
+          payload: '{"text": "Release was successful!"}'
+          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Failure
+        if: failure() # Envoie une notification en cas d'échec
+        uses: slackapi/slack-github-action@v1.0.0
+        with:
+          payload: '{"text": "Release failed!"}'
+          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
